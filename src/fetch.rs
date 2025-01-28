@@ -36,7 +36,7 @@ pub struct ServerInfo {
     pub gamestate: u32,
     pub map_name: String,
     pub security_level: String,
-    pub round_duration: u32,
+    pub round_duration: f32,
     pub time_dilation_current: f32,
     pub time_dilation_avg: f32,
     pub time_dilation_avg_slow: f32,
