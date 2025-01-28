@@ -45,10 +45,10 @@ pub struct ServerInfo {
     pub hard_popcap: u32,
     pub extreme_popcap: u32,
     pub popcap: Option<u32>,
-    #[serde(deserialize_with = "bool_from_int")]
-    pub bunkered: bool,
-    #[serde(deserialize_with = "bool_from_int")]
-    pub interviews: bool,
+    #[serde(deserialize_with = "bool_from_int_opt", default)]
+    pub bunkered: Option<bool>,
+    #[serde(deserialize_with = "bool_from_int_opt", default)]
+    pub interviews: Option<bool>,
     pub shuttle_mode: Option<String>,
     pub shuttle_timer: Option<u32>,
     pub active_players: Option<u32>,
@@ -97,6 +97,21 @@ where
         other => Err(de::Error::invalid_value(
             Unexpected::Unsigned(other as u64),
             &"zero or one",
+        )),
+    }
+}
+
+fn bool_from_int_opt<'de, D>(deserializer: D) -> Result<Option<bool>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    match Option::deserialize(deserializer)? {
+        Some(0) => Ok(Some(false)),
+        Some(1) => Ok(Some(true)),
+        None => Ok(None),
+        Some(other) => Err(de::Error::invalid_value(
+            Unexpected::Unsigned(other as u64),
+            &"zero, one, or null",
         )),
     }
 }
