@@ -1,10 +1,10 @@
-use std::io::ErrorKind;
+use std::{io::ErrorKind, time::Duration};
 
 use serde::{
     de::{self, Unexpected},
     Deserialize, Deserializer, Serialize,
 };
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::{io::{AsyncReadExt, AsyncWriteExt}, time::timeout};
 
 const PACKET: &[u8; 29] = &[
     0x00, 0x83, // Header
@@ -56,9 +56,9 @@ pub struct ServerInfo {
 
 pub async fn query_server(server: &str) -> std::io::Result<ServerInfo> {
     let mut stream = tokio::net::TcpStream::connect(server).await?;
-    stream.write_all(PACKET).await?;
+    timeout(Duration::from_secs_f32(0.75), stream.write_all(PACKET)).await??;
     let mut resp_header = [0u8; 2];
-    stream.read_exact(&mut resp_header).await?;
+    timeout(Duration::from_secs_f32(0.75),stream.read_exact(&mut resp_header)).await??;
     if resp_header != [0x00, 0x83] {
         return Err(std::io::Error::new(
             ErrorKind::InvalidData,
