@@ -52,6 +52,7 @@ pub struct ServerInfo {
     pub shuttle_mode: Option<String>,
     pub shuttle_timer: Option<u32>,
     pub active_players: Option<u32>,
+    pub public_address: Option<String>,
 }
 
 pub async fn query_server(server: &str) -> std::io::Result<ServerInfo> {
