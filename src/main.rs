@@ -69,7 +69,12 @@ async fn main() {
                     }
                 }
             } else {
-                output.servers.insert(server.to_string(), server_info.unwrap());
+                let server_info = server_info.expect("Could not parse server info");
+                let address = match &server_info.public_address {
+                    Some(s) => s,
+                    None => server
+                };
+                output.servers.insert(address.to_string(), server_info);
             }
         }
 
