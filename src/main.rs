@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use args::{Args, FailureTolerance};
 use chrono::{DateTime, Utc};
 use clap::Parser;
@@ -10,10 +8,27 @@ mod args;
 mod fetch;
 
 #[derive(Serialize)]
-struct ServerInfoOutput {
-    pub servers: HashMap<String, ServerInfo>,
-    pub retry_waits: HashMap<String, u16>,
+struct ServerInfoFetcherResponse {
+    pub servers: Vec<ServerInfoOutput>,
     pub last_update: DateTime<Utc>,
+}
+
+#[derive(Serialize)]
+struct ServerInfoOutput {
+    pub server: Option<ServerInfo>,
+    pub retry_wait: u16,
+    #[serde(skip)]
+    pub server_address: String
+}
+
+impl ServerInfoOutput {
+    fn new(addr: String) -> ServerInfoOutput {
+        ServerInfoOutput {
+            server: None,
+            retry_wait: 0,
+            server_address: addr
+        }
+    }
 }
 
 #[tokio::main]
@@ -31,50 +46,46 @@ async fn main() {
         return;
     }
 
-    let mut output = ServerInfoOutput {
-        servers: HashMap::new(),
-        retry_waits: HashMap::new(),
+    let mut output = ServerInfoFetcherResponse {
+        servers: servers.iter().map(|addr| ServerInfoOutput::new(addr.to_string())).collect(),
         last_update: Utc::now(),
     };
+
     let mut interval = tokio::time::interval(std::time::Duration::from_secs(interval as u64));
     loop {
         let mut errors = 0;
-        for server in &servers {
-            if let Some(retry_wait) = output.retry_waits.get_mut(server) {
-                if *retry_wait != 0 {
-                    *retry_wait -= 1;
-                    continue;
-                }
+        for server_output in &mut output.servers {
+            if server_output.retry_wait != 0 {
+                server_output.retry_wait -= 1;
+                continue;
             }
 
-            let server_info = query_server(server).await;
+            let server_info = query_server(&server_output.server_address).await;
             if let Err(error) = &server_info {
-                eprintln!("Error querying server {}: {}", server, error);
+                eprintln!("Error querying server {}: {}", server_output.server_address, error);
                 match failure_tolerance {
                     FailureTolerance::None => {
                         eprintln!("Exiting due to failure tolerance violation.");
                         return;
                     }
-                    FailureTolerance::One => {
-                        if errors != 0 {
-                            eprintln!("Exiting due to failure tolerance violation.");
-                        }
+                    FailureTolerance::One if errors != 0 => {
+                        eprintln!("Exiting due to failure tolerance violation.");
                         return;
                     }
                     _ => {
                         if failure_retry_wait != 0 {
-                            output.retry_waits.insert(server.to_string(), failure_retry_wait);
+                            server_output.retry_wait = failure_retry_wait;
                         }
                         errors += 1;
                     }
-                }
-            } else {
-                let server_info = server_info.expect("Could not parse server info");
-                let address = match &server_info.public_address {
-                    Some(s) => s,
-                    None => server
                 };
-                output.servers.insert(address.to_string(), server_info);
+            } else {
+                if let Ok(parsed_info) = server_info {
+                    server_output.server = Some(parsed_info);
+                } else {
+                    eprintln!("Server at {} sent a malformed status response.", server_output.server_address);
+                    return;
+                }
             }
         }
 
