@@ -8,10 +8,27 @@ mod args;
 mod fetch;
 
 #[derive(Serialize)]
-struct ServerInfoOutput {
-    pub servers: Vec<Option<ServerInfo>>,
-    pub retry_waits: Vec<u16>,
+struct ServerInfoFetcherResponse {
+    pub servers: Vec<ServerInfoOutput>,
     pub last_update: DateTime<Utc>,
+}
+
+#[derive(Serialize)]
+struct ServerInfoOutput {
+    pub server: Option<ServerInfo>,
+    pub retry_wait: u16,
+    #[serde(skip)]
+    pub server_address: String
+}
+
+impl ServerInfoOutput {
+    fn new(addr: String) -> ServerInfoOutput {
+        ServerInfoOutput {
+            server: None,
+            retry_wait: 0,
+            server_address: addr
+        }
+    }
 }
 
 #[tokio::main]
@@ -29,27 +46,23 @@ async fn main() {
         return;
     }
 
-    let mut output = ServerInfoOutput {
-        servers: vec![],
-        retry_waits: vec![0; servers.len()],
+    let mut output = ServerInfoFetcherResponse {
+        servers: servers.iter().map(|addr| ServerInfoOutput::new(addr.to_string())).collect(),
         last_update: Utc::now(),
     };
-    output.servers.resize_with(servers.len(), Default::default);
 
     let mut interval = tokio::time::interval(std::time::Duration::from_secs(interval as u64));
     loop {
         let mut errors = 0;
-        for (i, server) in servers.iter().enumerate() {
-            if let Some(retry_wait) = output.retry_waits.get_mut(i) {
-                if *retry_wait != 0 {
-                    *retry_wait -= 1;
-                    continue;
-                }
+        for server_output in &mut output.servers {
+            if server_output.retry_wait != 0 {
+                server_output.retry_wait -= 1;
+                continue;
             }
 
-            let server_info = query_server(server).await;
+            let server_info = query_server(&server_output.server_address).await;
             if let Err(error) = &server_info {
-                eprintln!("Error querying server {}: {}", server, error);
+                eprintln!("Error querying server {}: {}", server_output.server_address, error);
                 match failure_tolerance {
                     FailureTolerance::None => {
                         eprintln!("Exiting due to failure tolerance violation.");
@@ -61,16 +74,16 @@ async fn main() {
                     }
                     _ => {
                         if failure_retry_wait != 0 {
-                            output.retry_waits[i] = failure_retry_wait;
+                            server_output.retry_wait = failure_retry_wait;
                         }
                         errors += 1;
                     }
                 };
             } else {
                 if let Ok(parsed_info) = server_info {
-                    output.servers[i] = Some(parsed_info);
+                    server_output.server = Some(parsed_info);
                 } else {
-                    eprintln!("Server at {} sent a malformed status response.", server);
+                    eprintln!("Server at {} sent a malformed status response.", server_output.server_address);
                     return;
                 }
             }
