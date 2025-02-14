@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use args::{Args, FailureTolerance};
 use chrono::{DateTime, Utc};
 use clap::Parser;
@@ -11,8 +9,8 @@ mod fetch;
 
 #[derive(Serialize)]
 struct ServerInfoOutput {
-    pub servers: HashMap<String, ServerInfo>,
-    pub retry_waits: HashMap<String, u16>,
+    pub servers: Vec<Option<ServerInfo>>,
+    pub retry_waits: Vec<u16>,
     pub last_update: DateTime<Utc>,
 }
 
@@ -32,15 +30,17 @@ async fn main() {
     }
 
     let mut output = ServerInfoOutput {
-        servers: HashMap::new(),
-        retry_waits: HashMap::new(),
+        servers: vec![],
+        retry_waits: vec![0; servers.len()],
         last_update: Utc::now(),
     };
+    output.servers.resize_with(servers.len(), Default::default);
+
     let mut interval = tokio::time::interval(std::time::Duration::from_secs(interval as u64));
     loop {
         let mut errors = 0;
-        for server in &servers {
-            if let Some(retry_wait) = output.retry_waits.get_mut(server) {
+        for (i, server) in servers.iter().enumerate() {
+            if let Some(retry_wait) = output.retry_waits.get_mut(i) {
                 if *retry_wait != 0 {
                     *retry_wait -= 1;
                     continue;
@@ -55,26 +55,24 @@ async fn main() {
                         eprintln!("Exiting due to failure tolerance violation.");
                         return;
                     }
-                    FailureTolerance::One => {
-                        if errors != 0 {
-                            eprintln!("Exiting due to failure tolerance violation.");
-                        }
+                    FailureTolerance::One if errors != 0 => {
+                        eprintln!("Exiting due to failure tolerance violation.");
                         return;
                     }
                     _ => {
                         if failure_retry_wait != 0 {
-                            output.retry_waits.insert(server.to_string(), failure_retry_wait);
+                            output.retry_waits[i] = failure_retry_wait;
                         }
                         errors += 1;
                     }
-                }
-            } else {
-                let server_info = server_info.expect("Could not parse server info");
-                let address = match &server_info.public_address {
-                    Some(s) => s,
-                    None => server
                 };
-                output.servers.insert(address.to_string(), server_info);
+            } else {
+                if let Ok(parsed_info) = server_info {
+                    output.servers[i] = Some(parsed_info);
+                } else {
+                    eprintln!("Server at {} sent a malformed status response.", server);
+                    return;
+                }
             }
         }
 
