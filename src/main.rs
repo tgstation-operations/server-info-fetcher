@@ -16,19 +16,19 @@ struct ServerInfoFetcherResponse {
 #[derive(Serialize)]
 struct ServerInfoOutput {
     pub data: Option<ServerInfo>,
-    pub identifier: String,
+    pub identifier: Option<String>,
     pub retry_wait: u16,
     #[serde(skip)]
-    pub server_address: String
+    pub address: String,
 }
 
 impl ServerInfoOutput {
-    fn new(addr: String) -> ServerInfoOutput {
+    fn new(address: String) -> ServerInfoOutput {
         ServerInfoOutput {
             data: None,
-            identifier: String::new(),
+            identifier: None,
             retry_wait: 0,
-            server_address: addr
+            address,
         }
     }
 }
@@ -49,7 +49,10 @@ async fn main() {
     }
 
     let mut output = ServerInfoFetcherResponse {
-        servers: servers.iter().map(|addr| ServerInfoOutput::new(addr.to_string())).collect(),
+        servers: servers
+            .iter()
+            .map(|addr| ServerInfoOutput::new(addr.to_string()))
+            .collect(),
         last_update: Utc::now(),
     };
 
@@ -62,9 +65,9 @@ async fn main() {
                 continue;
             }
 
-            let server_info = query_server(&server_output.server_address).await;
+            let server_info = query_server(&server_output.address).await;
             if let Err(error) = &server_info {
-                eprintln!("Error querying server {}: {}", server_output.server_address, error);
+                eprintln!("Error querying server {}: {}", server_output.address, error);
                 match failure_tolerance {
                     FailureTolerance::None => {
                         eprintln!("Exiting due to failure tolerance violation.");
@@ -83,13 +86,20 @@ async fn main() {
                 };
                 server_output.data = None;
             } else {
-                if let Ok(parsed_info) = server_info {
-                    server_output.identifier = parsed_info.identifier.clone();
-                    server_output.data = Some(parsed_info);
-                } else {
-                    eprintln!("Server at {} sent a malformed status response.", server_output.server_address);
-                    return;
+                let parsed_info = server_info.expect("should never happen");
+                match server_output.identifier {
+                    None => server_output.identifier = Some(parsed_info.identifier.clone()),
+                    Some(ref identifier) if identifier.ne(&parsed_info.identifier) => {
+                        eprintln!(
+                            "Server {} changed identifier from `{}` to `{}`",
+                            server_output.address, identifier, parsed_info.identifier
+                        );
+                        // we don't really care about this, but it should be logged
+                        server_output.identifier = Some(parsed_info.identifier.clone());
+                    }
+                    _ => {}
                 }
+                server_output.data = Some(parsed_info);
             }
         }
 
