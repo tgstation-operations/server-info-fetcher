@@ -79,6 +79,7 @@ async fn main() {
                         errors += 1;
                     }
                 };
+                server_output.server = None;
             } else {
                 if let Ok(parsed_info) = server_info {
                     server_output.server = Some(parsed_info);
