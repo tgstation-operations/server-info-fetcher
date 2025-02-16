@@ -15,7 +15,8 @@ struct ServerInfoFetcherResponse {
 
 #[derive(Serialize)]
 struct ServerInfoOutput {
-    pub server: Option<ServerInfo>,
+    pub data: Option<ServerInfo>,
+    pub identifier: String,
     pub retry_wait: u16,
     #[serde(skip)]
     pub server_address: String
@@ -24,7 +25,8 @@ struct ServerInfoOutput {
 impl ServerInfoOutput {
     fn new(addr: String) -> ServerInfoOutput {
         ServerInfoOutput {
-            server: None,
+            data: None,
+            identifier: String::new(),
             retry_wait: 0,
             server_address: addr
         }
@@ -79,10 +81,11 @@ async fn main() {
                         errors += 1;
                     }
                 };
-                server_output.server = None;
+                server_output.data = None;
             } else {
                 if let Ok(parsed_info) = server_info {
-                    server_output.server = Some(parsed_info);
+                    server_output.identifier = parsed_info.identifier.clone();
+                    server_output.data = Some(parsed_info);
                 } else {
                     eprintln!("Server at {} sent a malformed status response.", server_output.server_address);
                     return;
